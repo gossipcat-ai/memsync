@@ -42,24 +42,26 @@ simple as `push` / `pull`.
 
 ## Install
 
+```bash
+npm install -g @gossipcat-ai/memsync
+```
+
 **Prerequisites:**
 - Node.js 20+
 - [GitHub CLI](https://cli.github.com/) (`gh`), authenticated: `gh auth login`
 
-**Not yet on the npm registry** — until it is, install from source:
+**From source** (for contributors, or before the package above is live on the registry):
 
 ```bash
-gh repo clone ataberk-xyz/memsync
+gh repo clone gossipcat-ai/memsync
 cd memsync
 npm install
 npm link
 ```
 
 `npm link` puts a `memsync` command on your `PATH`, backed by this checkout — the same one
-`npm install -g memsync` will give you once this is published. Repeat these four commands on every
-machine you want `memsync` on (the repo is currently private, so a plain `npm install -g
-git+https://github.com/ataberk-xyz/memsync.git` won't work for anyone without `gh`-authenticated
-access to it).
+`npm install -g @gossipcat-ai/memsync` gives you. The source repo is currently private, so cloning
+it this way needs `gh`-authenticated access; the published npm package does not.
 
 ## Quick start
 
