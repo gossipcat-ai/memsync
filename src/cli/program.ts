@@ -84,30 +84,44 @@ export function buildProgram(): Command {
       });
     });
 
-  program.command("status").action(() => {
-    const home = join(homedir(), ".memsync");
-    const rows = runStatus(join(home, "registry.json"));
-    for (const row of rows) {
-      console.log(`${row.projectKey}\t${row.absolutePath}\tlast synced ${row.lastSyncedAt}`);
-    }
-  });
-
-  program.command("doctor").action(async () => {
-    const deps = buildSyncEngineDeps();
-    const report = await runDoctor({
-      detectors: deps.detectors,
-      homeDir: deps.homeDir,
-      projectDir: process.cwd(),
-      backend: deps.backend,
+  program
+    .command("status")
+    .option("--json", "output as JSON")
+    .action((options: { json?: boolean }) => {
+      const home = join(homedir(), ".memsync");
+      const rows = runStatus(join(home, "registry.json"));
+      if (options.json) {
+        console.log(JSON.stringify(rows, null, 2));
+        return;
+      }
+      for (const row of rows) {
+        console.log(`${row.projectKey}\t${row.absolutePath}\tlast synced ${row.lastSyncedAt}`);
+      }
     });
-    for (const row of report.toolReport) {
-      console.log(`${row.tool}: ${row.relativeKeyPath} — ${row.exists ? "found" : "expected, not found"}`);
-    }
-    console.log(`remote visibility: ${report.visibility}`);
-    if (report.visibility === "public") {
-      console.error("WARNING: the backing gist is public — your agent memory is world-readable.");
-    }
-  });
+
+  program
+    .command("doctor")
+    .option("--json", "output as JSON")
+    .action(async (options: { json?: boolean }) => {
+      const deps = buildSyncEngineDeps();
+      const report = await runDoctor({
+        detectors: deps.detectors,
+        homeDir: deps.homeDir,
+        projectDir: process.cwd(),
+        backend: deps.backend,
+      });
+      if (options.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        for (const row of report.toolReport) {
+          console.log(`${row.tool} [${row.scope}]: ${row.relativeKeyPath} — ${row.exists ? "found" : "expected, not found"}`);
+        }
+        console.log(`remote visibility: ${report.visibility}`);
+      }
+      if (report.visibility === "public") {
+        console.error("WARNING: the backing gist is public — your agent memory is world-readable.");
+      }
+    });
 
   program.command("rotate").action(async () => {
     const deps = buildSyncEngineDeps();

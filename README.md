@@ -18,7 +18,9 @@
 
 Claude Code, Cursor, and Windsurf each build up real, useful memory over time — project notes in
 `~/.claude/projects/**/memory`, a `CLAUDE.md`, `.cursorrules`, `.cursor/rules/`, `.windsurfrules`,
-`.windsurf/rules/`, `.devin/rules/`.
+`.windsurf/rules/`, `.devin/rules/`. `AGENTS.md`, the emerging cross-tool convention for
+agent instructions — a root file plus any nested `AGENTS.md` files in monorepo
+subdirectories — builds up the same way.
 None of it is versioned. None of it leaves the machine it was written on. Lose the laptop, wipe
 the disk, or just switch to a second machine, and your agent starts over from zero — no matter how
 much context it had built up.
@@ -30,8 +32,8 @@ simple as `push` / `pull`.
 
 - **One command to back up, one command to restore.** `memsync push` on machine A,
   `memsync pull` on machine B — new machine, same agent memory.
-- **Works across tools out of the box.** Claude Code, Cursor, and Windsurf are detected
-  automatically; adding a new tool is just writing a new detector module.
+- **Works across tools out of the box.** Claude Code, Cursor, Windsurf, and `AGENTS.md` are
+  detected automatically; adding a new tool is just writing a new detector module.
 - **Safe by construction, not by convention.** Push never silently overwrites a conflicting
   remote — it stops and tells you to `pull` first. Pull backs up whatever it's about to
   overwrite as `.bak`. Symlinks are never followed across a trust boundary, in either direction.
@@ -95,8 +97,8 @@ keeps every machine current — or skip the discipline entirely with `memsync wa
 | `memsync init [--gist <id-or-url>]` | Creates a new private Gist, or attaches to an existing one if `--gist` is given. Prints the Gist URL, sets up `~/.memsync/config.json`, clones the backing repo, and writes a starter `.memsyncignore`. |
 | `memsync push [--all] [--project-key <key>]` | Syncs the current project's memory files up. `--all` syncs every project this machine has ever synced. `--project-key` overrides which project you're syncing as (see [project identity](#how-a-project-is-identified) below). |
 | `memsync pull [--all] [--dry-run] [--project-key <key>]` | Restores memory files for the current project. `--dry-run` shows what would change without touching anything. This is also how you do a first-time restore onto a brand-new machine. |
-| `memsync status` | Lists every project this machine has synced and when it last synced. |
-| `memsync doctor` | Diagnoses the current project: which tools were detected, which expected files are missing, and whether the backing Gist is still private. |
+| `memsync status [--json]` | Lists every project this machine has synced and when it last synced. `--json` prints the raw rows as JSON instead of tab-separated lines, for scripts/agents. |
+| `memsync doctor [--json]` | Diagnoses the current project: which tools were detected (both project-scoped and global files), which expected files are missing, and whether the backing Gist is still private. `--json` prints the raw report as JSON instead of human-readable lines, for scripts/agents. |
 | `memsync rotate` | Creates a fresh private Gist, migrates the current synced content into it, and switches this machine over — the old gist is left in place, not deleted; run `memsync init --gist <new-id>` on every other machine, then delete the old gist yourself once you've confirmed the switch. |
 | `memsync watch [--install]` | Watches every registered project and auto-pushes on change, debounced. `--install` wires this into your OS's login/boot process (launchd on macOS, cron on Linux) — not supported on Windows in v1. |
 
