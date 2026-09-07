@@ -187,8 +187,9 @@ These are deliberate v1 trade-offs, not bugs:
 - **memsync doesn't detect memory poisoning or prompt injection.** It faithfully transports
   whatever an agent wrote — content trust is out of scope for this tool.
 - **`.bak` files aren't cleaned up automatically** — they accumulate over time.
-- **Gist visibility isn't continuously monitored.** `doctor` checks it on demand; if someone flips
-  it to public via `gh gist edit --public`, memsync won't notice until the next `doctor` run.
+- **Gist visibility is checked on `push` and `doctor`, not continuously.** If someone flips it to
+  public via `gh gist edit --public` between syncs, memsync won't notice until the next `push` or
+  `doctor` run — there's no background monitor.
 
 ## Architecture
 
