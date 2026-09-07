@@ -120,6 +120,109 @@ describe("GistBackend", () => {
     ]);
   });
 
+  it("rolls back on a rejected push even under a non-English git locale, where stderr never contains the literal string \"[rejected]\", by relying on exit code 1", async () => {
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "git" && args[0] === "status") {
+        return { stdout: " M acme%2Fwidgets%2Fmeta.json\n", stderr: "" };
+      }
+      if (cmd === "git" && args[0] === "push") {
+        throw Object.assign(new Error("! [zurückgewiesen] main -> main (fetch first)"), { code: 1 });
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone", exec);
+    await backend.initRemote("abc123");
+
+    await expect(backend.push()).rejects.toThrow(/another machine pushed first/);
+
+    const gitCommands = exec.mock.calls
+      .filter(([cmd]) => cmd === "git")
+      .map(([, args]) => args.join(" "));
+    expect(gitCommands).toEqual([
+      "fetch origin",
+      "merge --ff-only origin/main",
+      "add -A",
+      "status --porcelain",
+      "commit -m memsync: sync",
+      "push origin main",
+      "fetch origin",
+      "reset --hard origin/main",
+    ]);
+  });
+
+  it("does NOT report a conflict and does NOT roll back when the push fails for a non-conflict reason (e.g. broken auth)", async () => {
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "git" && args[0] === "status") {
+        return { stdout: " M acme%2Fwidgets%2Fmeta.json\n", stderr: "" };
+      }
+      if (cmd === "git" && args[0] === "push") {
+        throw new Error(
+          "fatal: could not read Username for 'https://gist.github.com': terminal prompts disabled",
+        );
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone", exec);
+    await backend.initRemote("abc123");
+
+    let caught: unknown;
+    try {
+      await backend.push();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    const message = (caught as Error).message;
+    expect(message).toMatch(/could not read Username/);
+    expect(message).not.toMatch(/another machine pushed first/);
+
+    const gitCommands = exec.mock.calls
+      .filter(([cmd]) => cmd === "git")
+      .map(([, args]) => args.join(" "));
+    // No rollback attempted, and no second fetch after the failed push: the
+    // command sequence stops right at `push origin main`.
+    expect(gitCommands).toEqual([
+      "fetch origin",
+      "merge --ff-only origin/main",
+      "add -A",
+      "status --porcelain",
+      "commit -m memsync: sync",
+      "push origin main",
+    ]);
+  });
+
+  it("does not roll back on a network-style push failure either, and surfaces the underlying git error", async () => {
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "git" && args[0] === "status") {
+        return { stdout: " M acme%2Fwidgets%2Fmeta.json\n", stderr: "" };
+      }
+      if (cmd === "git" && args[0] === "push") {
+        throw new Error(
+          "fatal: unable to access 'https://gist.github.com/abc123.git/': Could not resolve host: gist.github.com",
+        );
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone", exec);
+    await backend.initRemote("abc123");
+
+    let caught: unknown;
+    try {
+      await backend.push();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    const message = (caught as Error).message;
+    expect(message).toMatch(/Could not resolve host/);
+    expect(message).not.toMatch(/another machine pushed first/);
+
+    const gitCommands = exec.mock.calls
+      .filter(([cmd]) => cmd === "git")
+      .map(([, args]) => args.join(" "));
+    expect(gitCommands).not.toContain("reset --hard origin/main");
+  });
+
   it("initRemote writes a throwaway placeholder file (gh gist create cannot create an empty gist) and cleans it up afterward", async () => {
     let capturedArgs: string[] = [];
     const exec = vi.fn(async (cmd: string, args: string[]) => {

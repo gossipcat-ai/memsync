@@ -101,7 +101,26 @@ export class GistBackend implements GitRemoteBackend {
       // the same reasoning pushProject's pre-sync already relies on.
       try {
         await this.exec("git", ["push", "origin", "main"], { cwd: this.localClonePath });
-      } catch {
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // Git's own fixed wording for a rejected ref update always contains
+        // this literal substring (e.g. "! [rejected] main -> main (fetch
+        // first)" or "(non-fast-forward)") — but ONLY under an English git
+        // locale. Under a translated locale (e.g. LANG=de_DE.UTF-8), git's
+        // gettext-wrapped output replaces "[rejected]" with a translated
+        // string (e.g. "[zurückgewiesen]"), so the substring check alone
+        // would misroute a genuine conflict into the no-rollback branch.
+        // Git's process exit code is locale-independent: a rejected
+        // non-fast-forward push always exits 1, while a fatal/auth/network
+        // failure always exits 128. Treat either signal as sufficient
+        // evidence of a genuine rejection.
+        const errCode = (err as NodeJS.ErrnoException & { code?: unknown }).code;
+        const isRejectedExitCode = typeof errCode === "number" && errCode === 1;
+        if (!isRejectedExitCode && !message.includes("[rejected]")) {
+          throw new Error(
+            `push failed: ${message} — this does not look like a conflict with another machine; check your \`gh\` authentication and network connection, then retry \`memsync push\``,
+          );
+        }
         try {
           await this.exec("git", ["fetch", "origin"], { cwd: this.localClonePath });
           await this.exec("git", ["reset", "--hard", "origin/main"], { cwd: this.localClonePath });
