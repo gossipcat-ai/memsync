@@ -1,0 +1,30 @@
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code local config/agents/hooks (this repo's own dev-orchestration
+# tooling, not part of the published package or needed by memsync's users)
+.claude/
+
+# gossipcat runtime state and agent memory (internal orchestration tooling
+# used while building this repo, not part of the published package)
+.gossip/
+
+# subagent-driven-development scratch (ledger, briefs, review packages) — git history is the record
+.superpowers/
+
+# internal planning docs (spec/plan used to build this repo, not user-facing)
+docs/
