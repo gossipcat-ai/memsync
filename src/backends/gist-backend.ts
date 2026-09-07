@@ -27,6 +27,50 @@ export function extractGistId(input: string): string {
   return match[1];
 }
 
+// The literal description every memsync-managed gist is created with — also
+// what `initRemote()`/`rotate()` pass to `gh gist create --desc`. Used here
+// to distinguish memsync's own gists from a user's other, unrelated gists.
+export const MEMSYNC_GIST_DESCRIPTION = "memsync agent memory store";
+
+export interface GistSummary {
+  id: string;
+  description: string;
+  updatedAt: string;
+}
+
+// `gh gist list` has no `--json` flag, so structured reads go through
+// `gh api gists` instead (same precedent as checkVisibility() below).
+// `gh api gists` only ever lists the AUTHENTICATED user's own gists — no risk
+// of surfacing another user's data. `--paginate` walks every page; `--jq`
+// projects each gist to one JSON object per line (JSON Lines, not a JSON
+// array).
+export async function listMyMemsyncGists(exec: ExecFn = realExec): Promise<GistSummary[]> {
+  const { stdout } = await exec("gh", [
+    "api",
+    "gists",
+    "--paginate",
+    "--jq",
+    ".[] | {id: .id, description: .description, updated_at: .updated_at}",
+  ]);
+  const gists: GistSummary[] = [];
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: { id: string; description: string; updated_at: string };
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      continue; // skip a malformed/partial line rather than crashing the whole lookup
+    }
+    if (parsed.description === MEMSYNC_GIST_DESCRIPTION) {
+      gists.push({ id: parsed.id, description: parsed.description, updatedAt: parsed.updated_at });
+    }
+  }
+  // Most recently updated first — the machine's most likely intended target.
+  gists.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  return gists;
+}
+
 export class GistBackend implements GitRemoteBackend {
   public gistId: string | undefined;
 
@@ -52,7 +96,7 @@ export class GistBackend implements GitRemoteBackend {
       // never uses it.)
       const { stdout } = await this.exec(
         "gh",
-        ["gist", "create", "--desc", "memsync agent memory store", placeholderPath],
+        ["gist", "create", "--desc", MEMSYNC_GIST_DESCRIPTION, placeholderPath],
         {},
       );
       this.gistId = extractGistId(stdout);
@@ -190,7 +234,7 @@ export class GistBackend implements GitRemoteBackend {
     try {
       const { stdout } = await this.exec(
         "gh",
-        ["gist", "create", "--desc", "memsync agent memory store", placeholderPath],
+        ["gist", "create", "--desc", MEMSYNC_GIST_DESCRIPTION, placeholderPath],
         {},
       );
       newGistId = extractGistId(stdout);

@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { GistBackend, extractGistId } from "../backends/gist-backend.js";
+import { GistBackend, extractGistId, listMyMemsyncGists } from "../backends/gist-backend.js";
+import { selectGistInteractively } from "./gist-picker.js";
 import { loadMachineConfig } from "../machine-config.js";
 import { ALL_DETECTORS } from "../detectors/index.js";
 import { runInit } from "./init.js";
@@ -63,10 +64,32 @@ export function buildProgram(): Command {
   });
 
   program
-    .command("clone <gistIdOrUrl>")
-    .action(async (gistIdOrUrl: string) => {
+    .command("clone [gistIdOrUrl]")
+    .action(async (gistIdOrUrl?: string) => {
       const home = join(homedir(), ".memsync");
-      const existingGistId = extractGistId(gistIdOrUrl);
+      let existingGistId: string;
+      if (gistIdOrUrl) {
+        existingGistId = extractGistId(gistIdOrUrl);
+      } else {
+        const gists = await listMyMemsyncGists();
+        if (gists.length === 0) {
+          console.error(
+            "No memsync gists found on your GitHub account. Run `memsync setup` on another machine first, or pass a gist id/URL directly: `memsync clone <id-or-url>`.",
+          );
+          process.exitCode = 1;
+          return;
+        } else if (gists.length === 1) {
+          existingGistId = gists[0].id;
+          console.log(`Found one memsync gist, attaching to it: https://gist.github.com/${existingGistId}`);
+        } else {
+          const selected = await selectGistInteractively(gists);
+          if (!selected) {
+            process.exitCode = 1;
+            return;
+          }
+          existingGistId = selected;
+        }
+      }
       await runInit({
         homeDir: home,
         clonePath: join(home, "repo"),

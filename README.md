@@ -80,9 +80,12 @@ memsync setup
 **On a second machine:**
 
 ```bash
-memsync clone <the-url-or-id-you-saved>
+memsync clone
 cd ~/projects/my-app          # same project, cloned fresh
-# → attaches to the existing gist and restores this project's Claude Code / Cursor / Windsurf memory in one step.
+# → looks up your own memsync gists via the GitHub API (you're already `gh`-authenticated) and
+#   lets you pick one if you have more than one, then restores this project's Claude Code /
+#   Cursor / Windsurf memory in one step. Already have the gist URL/id handy? `memsync clone
+#   <the-url-or-id>` still works directly, no lookup needed.
 ```
 
 That's it. From here, `memsync push` after a session and `memsync pull` before starting a new one
@@ -97,7 +100,7 @@ session, or `memsync pull --dry-run` to preview a restore without writing anythi
 |---|---|
 | `memsync setup` | First-machine flow, in one step: creates a new private Gist, prints its URL, and immediately pushes the current project's memory. Equivalent to `memsync init` followed by `memsync push`. |
 | `memsync init [--gist <id-or-url>]` | Creates a new private Gist, or attaches to an existing one if `--gist` is given. Prints the Gist URL, sets up `~/.memsync/config.json`, clones the backing repo, and writes a starter `.memsyncignore`. |
-| `memsync clone <id-or-url>` | Second-machine flow, in one step: attaches to an existing Gist and immediately pulls the current project's memory. Equivalent to `memsync init --gist <id-or-url>` followed by `memsync pull`. |
+| `memsync clone [id-or-url]` | Second-machine flow, in one step: attaches to a Gist and immediately pulls the current project's memory. With no argument, looks up your own memsync gists via `gh api` (you're already `gh`-authenticated) and auto-attaches if there's exactly one, or prompts you to pick if there are several. Pass `<id-or-url>` directly to skip the lookup. Equivalent to `memsync init --gist <id-or-url>` followed by `memsync pull`. |
 | `memsync push [--all] [--project-key <key>]` | Syncs the current project's memory files up. `--all` syncs every project this machine has ever synced. `--project-key` overrides which project you're syncing as (see [project identity](#how-a-project-is-identified) below). |
 | `memsync pull [--all] [--dry-run] [--project-key <key>]` | Restores memory files for the current project. `--dry-run` shows what would change without touching anything. This is also how you do a first-time restore onto a brand-new machine. |
 | `memsync status [--json]` | Lists every project this machine has synced and when it last synced. `--json` prints the raw rows as JSON instead of tab-separated lines, for scripts/agents. |

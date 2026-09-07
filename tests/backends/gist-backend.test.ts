@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { existsSync } from "node:fs";
-import { GistBackend } from "../../src/backends/gist-backend.js";
+import { GistBackend, listMyMemsyncGists } from "../../src/backends/gist-backend.js";
 
 describe("GistBackend", () => {
   it("initRemote without existingId creates a new gist via `gh gist create` and stores its id", async () => {
@@ -340,5 +340,61 @@ describe("GistBackend", () => {
     );
     expect(typeof filePathArg).toBe("string");
     expect(existsSync(filePathArg as string)).toBe(false);
+  });
+});
+
+describe("listMyMemsyncGists", () => {
+  it("returns only memsync-managed gists, sorted most-recently-updated first", async () => {
+    const stdout = [
+      JSON.stringify({ description: "memsync agent memory store", id: "8dc98d448007b4675804c253acb120e4", updated_at: "2026-09-07T16:43:31Z" }),
+      JSON.stringify({ description: "some other unrelated gist", id: "unrelated1", updated_at: "2026-09-08T00:00:00Z" }),
+      JSON.stringify({ description: "memsync agent memory store", id: "olderGistId0000000000000000000000", updated_at: "2026-01-01T00:00:00Z" }),
+      JSON.stringify({ description: "memsync agent memory store", id: "newestGistId000000000000000000000", updated_at: "2026-09-07T20:00:00Z" }),
+    ].join("\n");
+    const exec = vi.fn(async () => ({ stdout, stderr: "" }));
+
+    const result = await listMyMemsyncGists(exec);
+
+    expect(exec).toHaveBeenCalledWith(
+      "gh",
+      [
+        "api",
+        "gists",
+        "--paginate",
+        "--jq",
+        ".[] | {id: .id, description: .description, updated_at: .updated_at}",
+      ],
+    );
+    expect(result).toEqual([
+      { id: "newestGistId000000000000000000000", description: "memsync agent memory store", updatedAt: "2026-09-07T20:00:00Z" },
+      { id: "8dc98d448007b4675804c253acb120e4", description: "memsync agent memory store", updatedAt: "2026-09-07T16:43:31Z" },
+      { id: "olderGistId0000000000000000000000", description: "memsync agent memory store", updatedAt: "2026-01-01T00:00:00Z" },
+    ]);
+  });
+
+  it("returns an empty array when the user has no memsync gists", async () => {
+    const stdout = [
+      JSON.stringify({ description: "some other unrelated gist", id: "unrelated1", updated_at: "2026-09-08T00:00:00Z" }),
+    ].join("\n");
+    const exec = vi.fn(async () => ({ stdout, stderr: "" }));
+
+    const result = await listMyMemsyncGists(exec);
+    expect(result).toEqual([]);
+  });
+
+  it("skips a malformed/partial JSON line instead of crashing the whole lookup", async () => {
+    const stdout = [
+      JSON.stringify({ description: "memsync agent memory store", id: "goodgist1", updated_at: "2026-09-07T16:43:31Z" }),
+      "{not valid json",
+      "",
+      JSON.stringify({ description: "memsync agent memory store", id: "goodgist2", updated_at: "2026-09-06T00:00:00Z" }),
+    ].join("\n");
+    const exec = vi.fn(async () => ({ stdout, stderr: "" }));
+
+    const result = await listMyMemsyncGists(exec);
+    expect(result).toEqual([
+      { id: "goodgist1", description: "memsync agent memory store", updatedAt: "2026-09-07T16:43:31Z" },
+      { id: "goodgist2", description: "memsync agent memory store", updatedAt: "2026-09-06T00:00:00Z" },
+    ]);
   });
 });

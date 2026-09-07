@@ -16,7 +16,7 @@ import { buildProgram } from "../../src/cli/program.js";
 // other CLI tests (e.g. push-pull.test.ts) rely on LocalBareGitBackend
 // actually invoking real git via the same execFile, so this mock must not
 // leak module-wide.
-const { execCalls, fakeExecFile } = vi.hoisted(() => {
+const { execCalls, fakeExecFile, setGistListStdout, selectGistInteractivelyMock } = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const fs = require("node:fs") as typeof import("node:fs");
   const path = require("node:path") as typeof import("node:path");
@@ -45,14 +45,38 @@ const { execCalls, fakeExecFile } = vi.hoisted(() => {
     if (cmd === "git" && args[0] === "status") {
       return Promise.resolve({ stdout: "M placeholder\n", stderr: "" });
     }
+    if (cmd === "gh" && args[0] === "api" && args[1] === "gists") {
+      return Promise.resolve({ stdout: gistListStdout, stderr: "" });
+    }
     // git fetch / merge --ff-only / add -A / commit / push / remote set-url,
     // and `gh api gists/<id> --jq .public` (checkVisibility) all just need
     // to succeed with no interesting stdout for these tests.
     return Promise.resolve({ stdout: "", stderr: "" });
   }
 
-  return { execCalls, fakeExecFile };
+  // Mutable so individual tests can control what `gh api gists --paginate`
+  // returns for the no-argument `memsync clone` discovery path.
+  let gistListStdout = "";
+
+  const selectGistInteractivelyMock = vi.fn();
+
+  return {
+    execCalls,
+    fakeExecFile,
+    setGistListStdout: (stdout: string) => {
+      gistListStdout = stdout;
+    },
+    selectGistInteractivelyMock,
+  };
 });
+
+// The picker's own logic (list rendering, prompt validation) is exercised
+// directly against `selectGistInteractively` in its own unit test; here it's
+// mocked so the "multiple gists" CLI path can be driven with a canned
+// selection instead of real stdin interaction.
+vi.mock("../../src/cli/gist-picker.js", () => ({
+  selectGistInteractively: selectGistInteractivelyMock,
+}));
 
 // Node's real `child_process.execFile` carries a `util.promisify.custom`
 // implementation that resolves to `{ stdout, stderr }` (not just the first
@@ -97,6 +121,8 @@ describe("memsync setup / clone", () => {
     if (projectDir) rmSync(projectDir, { recursive: true, force: true });
     vi.restoreAllMocks();
     execCalls.length = 0;
+    setGistListStdout("");
+    selectGistInteractivelyMock.mockReset();
   });
 
   it("`memsync setup` creates a new gist, then pushes", async () => {
@@ -147,6 +173,98 @@ describe("memsync setup / clone", () => {
     // The pull actually happened: the seeded gist content landed on disk.
     expect(readFileSync(join(tempHome, "CLAUDE.md"), "utf8")).toBe("gist content");
     expect(logs.some((l) => /: \d+ file\(s\) changed$/.test(l))).toBe(true);
+
+    cwdSpy.mockRestore();
+  });
+
+  it("`memsync clone` with no argument and zero memsync gists found prints a helpful message and exits non-zero without attempting init/pull", async () => {
+    tempHome = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    process.env.HOME = tempHome;
+    setGistListStdout(
+      [JSON.stringify({ description: "some other unrelated gist", id: "unrelated1", updated_at: "2026-09-08T00:00:00Z" })].join(
+        "\n",
+      ),
+    );
+
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(projectDir);
+    const logs: string[] = [];
+    const errs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: string) => {
+      logs.push(msg);
+    });
+    vi.spyOn(console, "error").mockImplementation((msg: string) => {
+      errs.push(msg);
+    });
+
+    process.exitCode = undefined;
+    await buildProgram().parseAsync(["node", "memsync", "clone"]);
+
+    expect(process.exitCode).toBe(1);
+    expect([...logs, ...errs].some((l) => l.includes("No memsync gists found"))).toBe(true);
+    expect(
+      execCalls.some((c) => c.cmd === "git" && c.args[0] === "clone"),
+    ).toBe(false);
+    expect(selectGistInteractivelyMock).not.toHaveBeenCalled();
+
+    process.exitCode = undefined;
+    cwdSpy.mockRestore();
+  });
+
+  it("`memsync clone` with no argument and exactly one memsync gist found auto-attaches to it without prompting", async () => {
+    tempHome = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    process.env.HOME = tempHome;
+    setGistListStdout(
+      [
+        JSON.stringify({ description: "some other unrelated gist", id: "unrelated1", updated_at: "2026-09-08T00:00:00Z" }),
+        JSON.stringify({ description: "memsync agent memory store", id: "onlymemsyncgist000000000000000000", updated_at: "2026-09-07T16:43:31Z" }),
+      ].join("\n"),
+    );
+
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(projectDir);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: string) => {
+      logs.push(msg);
+    });
+
+    await buildProgram().parseAsync(["node", "memsync", "clone"]);
+
+    expect(selectGistInteractivelyMock).not.toHaveBeenCalled();
+    expect(logs.some((l) => l.includes("Found one memsync gist"))).toBe(true);
+    expect(logs.some((l) => l.includes("memsync attached to gist onlymemsyncgist000000000000000000"))).toBe(true);
+    expect(readFileSync(join(tempHome, "CLAUDE.md"), "utf8")).toBe("gist content");
+
+    cwdSpy.mockRestore();
+  });
+
+  it("`memsync clone` with no argument and multiple memsync gists found drives the injected picker and attaches to the selected gist", async () => {
+    tempHome = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    process.env.HOME = tempHome;
+    setGistListStdout(
+      [
+        JSON.stringify({ description: "memsync agent memory store", id: "firstgist00000000000000000000000", updated_at: "2026-09-07T20:00:00Z" }),
+        JSON.stringify({ description: "memsync agent memory store", id: "secondgist0000000000000000000000", updated_at: "2026-09-06T20:00:00Z" }),
+      ].join("\n"),
+    );
+    selectGistInteractivelyMock.mockResolvedValueOnce("secondgist0000000000000000000000");
+
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(projectDir);
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg: string) => {
+      logs.push(msg);
+    });
+
+    await buildProgram().parseAsync(["node", "memsync", "clone"]);
+
+    expect(selectGistInteractivelyMock).toHaveBeenCalledTimes(1);
+    const passedGists = selectGistInteractivelyMock.mock.calls[0][0];
+    expect(passedGists.map((g: { id: string }) => g.id)).toEqual([
+      "firstgist00000000000000000000000",
+      "secondgist0000000000000000000000",
+    ]);
+    expect(logs.some((l) => l.includes("memsync attached to gist secondgist0000000000000000000000"))).toBe(true);
 
     cwdSpy.mockRestore();
   });
