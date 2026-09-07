@@ -1,6 +1,8 @@
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { GistBackend, extractGistId, listMyMemsyncGists } from "../backends/gist-backend.js";
 import { selectGistInteractively } from "./gist-picker.js";
 import { loadMachineConfig } from "../machine-config.js";
@@ -14,9 +16,22 @@ import { runRotate } from "./rotate.js";
 import { startWatch, generateInstallInstructions } from "./watch.js";
 import type { SyncEngineDeps } from "../sync-engine/push.js";
 
+// package.json sits two directories above this file's compiled location
+// (dist/cli/program.js -> ../../package.json), and one directory above the
+// source location during ts-node/tsx dev runs is not relied upon — only the
+// compiled dist/ layout matters since that's what actually ships and runs.
+function readPackageVersion(): string {
+  const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
+  const { version } = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version: string };
+  return version;
+}
+
 export function buildProgram(): Command {
   const program = new Command();
-  program.name("memsync").description("Sync AI coding agent memory across machines via a private Gist");
+  program
+    .name("memsync")
+    .description("Sync AI coding agent memory across machines via a private Gist")
+    .version(readPackageVersion());
 
   program
     .command("init")
