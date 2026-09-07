@@ -17,7 +17,8 @@
 ## The problem
 
 Claude Code, Cursor, and Windsurf each build up real, useful memory over time — project notes in
-`~/.claude/projects/**/memory`, a `CLAUDE.md`, `.cursorrules`, `.cursor/rules/`, `.windsurfrules`.
+`~/.claude/projects/**/memory`, a `CLAUDE.md`, `.cursorrules`, `.cursor/rules/`, `.windsurfrules`,
+`.windsurf/rules/`, `.devin/rules/`.
 None of it is versioned. None of it leaves the machine it was written on. Lose the laptop, wipe
 the disk, or just switch to a second machine, and your agent starts over from zero — no matter how
 much context it had built up.
