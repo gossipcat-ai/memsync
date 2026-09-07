@@ -29,9 +29,35 @@ export function loadIgnorePatterns(projectDir: string, homeDir: string): string[
   return [...DEFAULT_IGNORE_PATTERNS, ...projectPatterns, ...globalPatterns];
 }
 
+function tokenizeBasename(basename: string): string[] {
+  const withCamelBoundaries = basename.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  return withCamelBoundaries
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 0);
+}
+
+function isSecretShapedFilename(relativeKeyPath: string): boolean {
+  const basename = relativeKeyPath.split("/").pop() ?? relativeKeyPath;
+  const tokens = new Set(tokenizeBasename(basename));
+  if (tokens.has("token")) return true;
+  if (tokens.has("api") && tokens.has("key")) return true;
+  if (tokens.has("env")) return true;
+  for (const token of tokens) {
+    // Squashed, no-delimiter forms with a real prefix before "token", e.g.
+    // "mytoken" or "authtoken" — but not "tokenizeit"/"tokenizer", which have
+    // "token" as a prefix rather than a suffix.
+    if (token.endsWith("token") && token !== "token") return true;
+    // Squashed, no-delimiter "apikey" — both substrings within one token.
+    if (token.includes("api") && token.includes("key")) return true;
+  }
+  return false;
+}
+
 export function filterIgnored(files: FileRef[], patterns: string[]): FileRef[] {
-  const ig = ignorePkg().add(patterns);
-  return files.filter((f) => !ig.ignores(f.relativeKeyPath));
+  const customPatterns = patterns.filter((p) => !DEFAULT_IGNORE_PATTERNS.includes(p));
+  const ig = ignorePkg().add(customPatterns);
+  return files.filter((f) => !isSecretShapedFilename(f.relativeKeyPath) && !ig.ignores(f.relativeKeyPath));
 }
 
 function patternToContentRegex(pattern: string): RegExp {

@@ -47,6 +47,127 @@ describe("filterIgnored", () => {
     const kept = filterIgnored(files, ["*apikey*"]);
     expect(kept).toEqual([files[0]]);
   });
+
+  describe("default patterns — word-boundary-aware filename matching", () => {
+    it("keeps files whose name merely contains 'api' and 'key' as substrings within other words", () => {
+      const files: FileRef[] = [
+        {
+          absolutePath: "/p/reference_apigw_invalid_keyvalue_is_route_miss.md",
+          relativeKeyPath: "claude/memory/reference_apigw_invalid_keyvalue_is_route_miss.md",
+          exists: true,
+        },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual(files);
+    });
+
+    it("keeps files whose name merely contains 'token' as a substring within another word", () => {
+      const files: FileRef[] = [
+        {
+          absolutePath: "/p/archive/project_tokenizeit_engagement.md",
+          relativeKeyPath: "claude/memory/archive/project_tokenizeit_engagement.md",
+          exists: true,
+        },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual(files);
+    });
+
+    it("excludes files with a standalone 'token' token in the name", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/gh_token.md", relativeKeyPath: "claude/memory/gh_token.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with standalone 'api' and 'key' tokens separated by a hyphen", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/api-key.md", relativeKeyPath: "claude/memory/api-key.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with standalone 'api' and 'key' tokens separated by an underscore", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/api_key.md", relativeKeyPath: "claude/memory/api_key.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with camelCase 'apiKey' by splitting on the camelCase boundary", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/apiKey.md", relativeKeyPath: "claude/memory/apiKey.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with a standalone 'env' token as a dotfile", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/.env.local", relativeKeyPath: "claude/memory/.env.local", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with a standalone 'env' token as a suffix", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/production.env", relativeKeyPath: "claude/memory/production.env", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with squashed, no-delimiter 'apikey' (api+key within one token)", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/apikey.md", relativeKeyPath: "claude/memory/apikey.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with squashed, no-delimiter 'mytoken' ('token' as a suffix of a token)", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/mytoken.md", relativeKeyPath: "claude/memory/mytoken.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with squashed, no-delimiter 'authtoken' ('token' as a suffix of a token)", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/authtoken.md", relativeKeyPath: "claude/memory/authtoken.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("excludes files with squashed, all-uppercase 'AUTHTOKEN' (lowercasing still applies before suffix check)", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/AUTHTOKEN.md", relativeKeyPath: "claude/memory/AUTHTOKEN.md", exists: true },
+      ];
+      const kept = filterIgnored(files, DEFAULT_IGNORE_PATTERNS);
+      expect(kept).toEqual([]);
+    });
+
+    it("still applies custom (non-default) patterns as classic substring globs alongside the smarter default check", () => {
+      const files: FileRef[] = [
+        { absolutePath: "/p/a.md", relativeKeyPath: "claude/a.md", exists: true },
+        {
+          absolutePath: "/p/reference_apigw_invalid_keyvalue_is_route_miss.md",
+          relativeKeyPath: "claude/memory/reference_apigw_invalid_keyvalue_is_route_miss.md",
+          exists: true,
+        },
+      ];
+      // "*apigw*" is a genuinely custom pattern (not one of the 3 defaults), so it
+      // should still do classic substring globbing and exclude the second file.
+      const kept = filterIgnored(files, [...DEFAULT_IGNORE_PATTERNS, "*apigw*"]);
+      expect(kept).toEqual([files[0]]);
+    });
+  });
 });
 
 describe("scanContentForSecretMatches", () => {
