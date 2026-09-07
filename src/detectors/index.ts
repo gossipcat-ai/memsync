@@ -3,5 +3,12 @@ import { claudeCodeDetector } from "./claude-code.js";
 import { cursorDetector } from "./cursor.js";
 import { windsurfDetector } from "./windsurf.js";
 import { agentsMdDetector } from "./agents-md.js";
+import { copilotDetector } from "./copilot.js";
 
-export const ALL_DETECTORS: Detector[] = [claudeCodeDetector, cursorDetector, windsurfDetector, agentsMdDetector];
+export const ALL_DETECTORS: Detector[] = [
+  claudeCodeDetector,
+  cursorDetector,
+  windsurfDetector,
+  agentsMdDetector,
+  copilotDetector,
+];

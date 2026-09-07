@@ -68,8 +68,21 @@ function patternToContentRegex(pattern: string): RegExp {
   return new RegExp(escaped, "i");
 }
 
+// Fixed, high-confidence secret shapes that are worth flagging regardless of
+// what the (glob-derived) `patterns` say — these don't necessarily contain
+// "api"/"key"/"token"/"env" anywhere nearby. Kept short and specific to avoid
+// over-triggering on short coincidental substrings; this is still
+// best-effort, not exhaustive secret-scanning.
+const KNOWN_SECRET_SHAPE_PATTERNS: RegExp[] = [
+  /gh[pousr]_[A-Za-z0-9]{36,}/, // GitHub personal/oauth/user/server access tokens
+  /AKIA[0-9A-Z]{16}/, // AWS access key ID
+  /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/, // PEM/OpenSSH private key header
+  /-----BEGIN PGP PRIVATE KEY BLOCK-----/, // real PGP private key export header always ends in "BLOCK"
+  /xox[baprs]-[A-Za-z0-9-]{10,}/, // Slack tokens (bot/app/user/refresh/etc.)
+];
+
 export function scanContentForSecretMatches(files: FileRef[], patterns: string[]): string[] {
-  const regexes = patterns.map(patternToContentRegex);
+  const regexes = [...patterns.map(patternToContentRegex), ...KNOWN_SECRET_SHAPE_PATTERNS];
   const flagged: string[] = [];
   for (const file of files) {
     if (!file.exists) continue;

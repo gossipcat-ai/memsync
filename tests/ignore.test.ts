@@ -196,3 +196,89 @@ describe("scanContentForSecretMatches", () => {
     }
   });
 });
+
+describe("scanContentForSecretMatches known secret shapes", () => {
+  it("flags a file whose content contains a realistic GitHub personal access token shape", () => {
+    const dir = mkdtempSync(join(tmpdir(), "memsync-ign-content-"));
+    try {
+      const file = join(dir, "notes.md");
+      writeFileSync(file, "remember: ghp_" + "a".repeat(36) + " is what I used last time");
+      const files: FileRef[] = [{ absolutePath: file, relativeKeyPath: "claude/notes.md", exists: true }];
+      const flagged = scanContentForSecretMatches(files, []);
+      expect(flagged).toEqual(["claude/notes.md"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a file whose content contains a realistic AWS access key ID shape", () => {
+    const dir = mkdtempSync(join(tmpdir(), "memsync-ign-content-"));
+    try {
+      const file = join(dir, "notes.md");
+      writeFileSync(file, "the value is AKIA" + "Q".repeat(16) + " in the notes");
+      const files: FileRef[] = [{ absolutePath: file, relativeKeyPath: "claude/notes.md", exists: true }];
+      const flagged = scanContentForSecretMatches(files, []);
+      expect(flagged).toEqual(["claude/notes.md"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a file containing a PEM private key header", () => {
+    const dir = mkdtempSync(join(tmpdir(), "memsync-ign-content-"));
+    try {
+      const file = join(dir, "notes.md");
+      writeFileSync(file, "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAK...\n-----END RSA PRIVATE KEY-----");
+      const files: FileRef[] = [{ absolutePath: file, relativeKeyPath: "claude/notes.md", exists: true }];
+      const flagged = scanContentForSecretMatches(files, []);
+      expect(flagged).toEqual(["claude/notes.md"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a file containing a real PGP private key export header (which always ends in BLOCK)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "memsync-ign-content-"));
+    try {
+      const file = join(dir, "notes.md");
+      writeFileSync(
+        file,
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF...\n-----END PGP PRIVATE KEY BLOCK-----",
+      );
+      const files: FileRef[] = [{ absolutePath: file, relativeKeyPath: "claude/notes.md", exists: true }];
+      const flagged = scanContentForSecretMatches(files, []);
+      expect(flagged).toEqual(["claude/notes.md"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("flags a file containing a realistic Slack token shape", () => {
+    const dir = mkdtempSync(join(tmpdir(), "memsync-ign-content-"));
+    try {
+      const file = join(dir, "notes.md");
+      writeFileSync(file, "slack said: xoxb-FAKEFAKEFAKE-notarealtoken");
+      const files: FileRef[] = [{ absolutePath: file, relativeKeyPath: "claude/notes.md", exists: true }];
+      const flagged = scanContentForSecretMatches(files, []);
+      expect(flagged).toEqual(["claude/notes.md"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not flag short, coincidental substrings that merely resemble a known secret prefix", () => {
+    const dir = mkdtempSync(join(tmpdir(), "memsync-ign-content-"));
+    try {
+      const file = join(dir, "notes.md");
+      writeFileSync(
+        file,
+        "the acronym AKIA came up in conversation, and someone typed ghp_xyz as a placeholder"
+      );
+      const files: FileRef[] = [{ absolutePath: file, relativeKeyPath: "claude/notes.md", exists: true }];
+      const flagged = scanContentForSecretMatches(files, []);
+      expect(flagged).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -20,7 +20,8 @@ Claude Code, Cursor, and Windsurf each build up real, useful memory over time �
 `~/.claude/projects/**/memory`, a `CLAUDE.md`, `.cursorrules`, `.cursor/rules/`, `.windsurfrules`,
 `.windsurf/rules/`, `.devin/rules/`. `AGENTS.md`, the emerging cross-tool convention for
 agent instructions — a root file plus any nested `AGENTS.md` files in monorepo
-subdirectories — builds up the same way.
+subdirectories — builds up the same way, and so does GitHub Copilot's
+`.github/copilot-instructions.md`.
 None of it is versioned. None of it leaves the machine it was written on. Lose the laptop, wipe
 the disk, or just switch to a second machine, and your agent starts over from zero — no matter how
 much context it had built up.
@@ -32,8 +33,9 @@ simple as `push` / `pull`.
 
 - **One command to back up, one command to restore.** `memsync push` on machine A,
   `memsync pull` on machine B — new machine, same agent memory.
-- **Works across tools out of the box.** Claude Code, Cursor, Windsurf, and `AGENTS.md` are
-  detected automatically; adding a new tool is just writing a new detector module.
+- **Works across tools out of the box.** Claude Code, Cursor, Windsurf, `AGENTS.md`, and
+  GitHub Copilot are detected automatically; adding a new tool is just writing a new
+  detector module.
 - **Safe by construction, not by convention.** Push never silently overwrites a conflicting
   remote — it stops and tells you to `pull` first. Pull backs up whatever it's about to
   overwrite as `.bak`. Symlinks are never followed across a trust boundary, in either direction.
@@ -188,8 +190,9 @@ This matters for how you drive it:
 
 These are deliberate v1 trade-offs, not bugs:
 
-- **Content scanning is best-effort, not a guarantee.** It catches common key/token shapes; a
-  secret that doesn't match a pattern passes through silently.
+- **Content scanning is best-effort, not a guarantee.** It catches common key/token shapes, plus a
+  short list of well-known token formats (GitHub, AWS, PEM keys, Slack); a secret that doesn't
+  match a pattern passes through silently.
 - **The Gist is unlisted, not access-controlled.** Anyone with the URL can read it. Encryption is
   planned for a future release; for now, treat the Gist URL itself as sensitive.
 - **Gist history is permanent.** Adding a secret to `.memsyncignore` or deleting it locally stops
