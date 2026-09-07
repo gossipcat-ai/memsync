@@ -41,6 +41,46 @@ export function buildProgram(): Command {
       );
     });
 
+  program.command("setup").action(async () => {
+    const home = join(homedir(), ".memsync");
+    const initResult = await runInit({
+      homeDir: home,
+      clonePath: join(home, "repo"),
+      projectDir: process.cwd(),
+      existingGistId: undefined,
+      backendFactory: (clonePath) => new GistBackend(clonePath),
+    });
+    if (initResult.gistId) {
+      console.log(`Gist URL: https://gist.github.com/${initResult.gistId}`);
+    }
+    console.log(
+      "memsync initialized. Keep the gist URL safe — it's the only thing you need to restore on another machine.",
+    );
+    console.log(
+      "NOTE: the gist is private (unlisted), not access-controlled — anyone with the URL can read it, and its git history is permanent even if you later remove a file.",
+    );
+    await runPush(buildSyncEngineDeps(), { projectDir: process.cwd() });
+  });
+
+  program
+    .command("clone <gistIdOrUrl>")
+    .action(async (gistIdOrUrl: string) => {
+      const home = join(homedir(), ".memsync");
+      const existingGistId = extractGistId(gistIdOrUrl);
+      await runInit({
+        homeDir: home,
+        clonePath: join(home, "repo"),
+        projectDir: process.cwd(),
+        existingGistId,
+        backendFactory: (clonePath) => new GistBackend(clonePath),
+      });
+      console.log(`memsync attached to gist ${existingGistId}.`);
+      console.log(
+        "NOTE: the gist is private (unlisted), not access-controlled — anyone with the URL can read it, and its git history is permanent even if you later remove a file.",
+      );
+      await runPull(buildSyncEngineDeps(), { projectDir: process.cwd() });
+    });
+
   function buildSyncEngineDeps(): SyncEngineDeps {
     const home = join(homedir(), ".memsync");
     const { gistId } = loadMachineConfig(join(home, "config.json"));
