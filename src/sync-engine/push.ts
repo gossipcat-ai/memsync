@@ -55,7 +55,11 @@ export async function pushProject(
   deps: SyncEngineDeps,
   projectDir: string,
   projectKey: string,
-): Promise<{ pushedFiles: string[]; contentWarnings: string[] }> {
+): Promise<{
+  pushedFiles: string[];
+  contentWarnings: string[];
+  visibility: Awaited<ReturnType<GitRemoteBackend["checkVisibility"]>>;
+}> {
   const release = acquireLock(deps.lockPath);
   try {
     const cloneDir = await deps.backend.ensureLocalClone();
@@ -112,33 +116,39 @@ export async function pushProject(
 
     await deps.backend.push();
 
+    // Gist visibility isn't continuously monitored server-side, so this is the one
+    // place a flip to public (e.g. via `gh gist edit --public`) gets caught close to
+    // when it matters — right after real memory content was just pushed to it —
+    // instead of silently waiting for the next standalone `memsync doctor` run.
+    const visibility = await deps.backend.checkVisibility();
+
     upsertRegistryEntry(deps.registryPath, projectKey, projectDir);
 
     return {
       pushedFiles: [...projectFiles, ...globalFiles].map((f) => f.relativeKeyPath),
       contentWarnings,
+      visibility,
     };
   } finally {
     release();
   }
 }
 
+type PushSuccess = {
+  pushedFiles: string[];
+  contentWarnings: string[];
+  visibility: Awaited<ReturnType<GitRemoteBackend["checkVisibility"]>>;
+};
+
 export async function pushAllRegistered(
   deps: SyncEngineDeps,
 ): Promise<
-  Map<
-    string,
-    | { pushedFiles: string[]; contentWarnings: string[] }
-    | { skipped: true; reason: string }
-    | { failed: true; error: string }
-  >
+  Map<string, PushSuccess | { skipped: true; reason: string } | { failed: true; error: string }>
 > {
   const registry = loadRegistry(deps.registryPath);
   const results = new Map<
     string,
-    | { pushedFiles: string[]; contentWarnings: string[] }
-    | { skipped: true; reason: string }
-    | { failed: true; error: string }
+    PushSuccess | { skipped: true; reason: string } | { failed: true; error: string }
   >();
   for (const [projectKey, entry] of Object.entries(registry)) {
     // Registry dosyaları güvenilmez girdi olarak ele alınır: an absolutePath read back

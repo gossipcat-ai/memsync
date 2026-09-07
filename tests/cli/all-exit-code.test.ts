@@ -141,6 +141,144 @@ describe("runPush --all exit code", () => {
   });
 });
 
+describe("runPush gist visibility warning", () => {
+  it("warns on the single-project path when the backend reports the gist is public", async () => {
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const cloneDir = mkdtempSync(join(tmpdir(), "memsync-clone-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await runPush(
+        {
+          backend: fakeBackend(cloneDir, { checkVisibility: async () => "public" }),
+          detectors: [noopDetector],
+          homeDir: home,
+          registryPath: join(home, "registry.json"),
+          lockPath: join(home, "repo.lock"),
+        },
+        { projectDir },
+      );
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("the backing gist is public"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not warn on the single-project path when the backend reports the gist is private", async () => {
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const cloneDir = mkdtempSync(join(tmpdir(), "memsync-clone-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await runPush(
+        {
+          backend: fakeBackend(cloneDir, { checkVisibility: async () => "private" }),
+          detectors: [noopDetector],
+          homeDir: home,
+          registryPath: join(home, "registry.json"),
+          lockPath: join(home, "repo.lock"),
+        },
+        { projectDir },
+      );
+
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not warn on the single-project path when the backend reports unknown visibility", async () => {
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const cloneDir = mkdtempSync(join(tmpdir(), "memsync-clone-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await runPush(
+        {
+          backend: fakeBackend(cloneDir, { checkVisibility: async () => "unknown" }),
+          detectors: [noopDetector],
+          homeDir: home,
+          registryPath: join(home, "registry.json"),
+          lockPath: join(home, "repo.lock"),
+        },
+        { projectDir },
+      );
+
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("warns on the --all path for a registered project whose gist is public", async () => {
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const cloneDir = mkdtempSync(join(tmpdir(), "memsync-clone-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const registryPath = join(home, "registry.json");
+      upsertRegistryEntry(registryPath, "acme/widgets", projectDir);
+
+      await runPush(
+        {
+          backend: fakeBackend(cloneDir, { checkVisibility: async () => "public" }),
+          detectors: [noopDetector],
+          homeDir: home,
+          registryPath,
+          lockPath: join(home, "repo.lock"),
+        },
+        { projectDir, all: true },
+      );
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("the backing gist is public"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not warn on the --all path when every registered project's gist is private", async () => {
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const cloneDir = mkdtempSync(join(tmpdir(), "memsync-clone-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const registryPath = join(home, "registry.json");
+      upsertRegistryEntry(registryPath, "acme/widgets", projectDir);
+
+      await runPush(
+        {
+          backend: fakeBackend(cloneDir, { checkVisibility: async () => "private" }),
+          detectors: [noopDetector],
+          homeDir: home,
+          registryPath,
+          lockPath: join(home, "repo.lock"),
+        },
+        { projectDir, all: true },
+      );
+
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("runPull --all exit code", () => {
   it("exits non-zero when a registered project has a skipped unsafe path", async () => {
     const home = mkdtempSync(join(tmpdir(), "memsync-home-"));

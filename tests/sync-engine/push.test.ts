@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { LocalBareGitBackend } from "../../src/backends/local-bare-backend.js";
 import { pushProject } from "../../src/sync-engine/push.js";
 import { cursorDetector } from "../../src/detectors/cursor.js";
-import type { Detector, FileRef } from "../../src/types.js";
+import type { Detector, FileRef, GitRemoteBackend } from "../../src/types.js";
 
 function fakeDetector(projectFiles: FileRef[], globalFiles: FileRef[] = []): Detector {
   return {
@@ -270,6 +270,67 @@ describe("pushProject", () => {
 
       const registry = JSON.parse(readFileSync(registryPath, "utf8"));
       expect(registry["acme/widgets"].absolutePath).toBe(projectDir);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+      rmSync(bareDir, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes the backend's visibility check in the result when the gist is private", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const bareDir = mkdtempSync(join(tmpdir(), "memsync-bare-"));
+    const cloneDir = join(mkdtempSync(join(tmpdir(), "memsync-clone-")), "repo");
+    try {
+      const backend = new LocalBareGitBackend(bareDir, cloneDir);
+      await backend.initRemote();
+      await backend.ensureLocalClone();
+
+      const result = await pushProject(
+        { backend, detectors: [fakeDetector([])], homeDir: home, registryPath: join(home, "registry.json"), lockPath: join(home, "repo.lock"), hostname: "h" },
+        projectDir,
+        "acme/widgets",
+      );
+
+      // LocalBareGitBackend.checkVisibility() always reports "private".
+      expect(result.visibility).toBe("private");
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+      rmSync(bareDir, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes the backend's visibility check in the result when the gist is public, so push warns instead of staying silent until the next `doctor` run", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "memsync-proj-"));
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const bareDir = mkdtempSync(join(tmpdir(), "memsync-bare-"));
+    const cloneDir = join(mkdtempSync(join(tmpdir(), "memsync-clone-")), "repo");
+    try {
+      const realBackend = new LocalBareGitBackend(bareDir, cloneDir);
+      await realBackend.initRemote();
+      await realBackend.ensureLocalClone();
+
+      // Real git plumbing for everything except visibility, which is stubbed to
+      // simulate a gist that has been flipped public out-of-band.
+      const publicBackend: GitRemoteBackend = {
+        initRemote: (id) => realBackend.initRemote(id),
+        ensureLocalClone: () => realBackend.ensureLocalClone(),
+        push: () => realBackend.push(),
+        pull: () => realBackend.pull(),
+        checkVisibility: async () => "public",
+      };
+
+      const result = await pushProject(
+        { backend: publicBackend, detectors: [fakeDetector([])], homeDir: home, registryPath: join(home, "registry.json"), lockPath: join(home, "repo.lock"), hostname: "h" },
+        projectDir,
+        "acme/widgets",
+      );
+
+      expect(result.visibility).toBe("public");
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
       rmSync(home, { recursive: true, force: true });

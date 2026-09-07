@@ -6,7 +6,7 @@ import { LocalBareGitBackend } from "../../src/backends/local-bare-backend.js";
 import { pushAllRegistered } from "../../src/sync-engine/push.js";
 import { pullAllRegistered } from "../../src/sync-engine/pull.js";
 import { upsertRegistryEntry } from "../../src/registry.js";
-import type { Detector } from "../../src/types.js";
+import type { Detector, GitRemoteBackend } from "../../src/types.js";
 
 const noopDetector: Detector = {
   name: "noop",
@@ -166,6 +166,49 @@ describe("pushAllRegistered", () => {
       rmSync(cloneDir, { recursive: true, force: true });
       rmSync(goodProjectDir, { recursive: true, force: true });
       rmSync(badProjectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("carries the backend's visibility check through into each per-project success result", async () => {
+    const home = mkdtempSync(join(tmpdir(), "memsync-home-"));
+    const bareDir = mkdtempSync(join(tmpdir(), "memsync-bare-"));
+    const cloneDir = join(mkdtempSync(join(tmpdir(), "memsync-clone-")), "repo");
+    const goodProjectDir = mkdtempSync(join(tmpdir(), "memsync-good-"));
+    try {
+      const realBackend = new LocalBareGitBackend(bareDir, cloneDir);
+      await realBackend.initRemote();
+      await realBackend.ensureLocalClone();
+
+      // Real git plumbing for everything except visibility, stubbed to simulate a
+      // gist that has been flipped public out-of-band.
+      const publicBackend: GitRemoteBackend = {
+        initRemote: (id) => realBackend.initRemote(id),
+        ensureLocalClone: () => realBackend.ensureLocalClone(),
+        push: () => realBackend.push(),
+        pull: () => realBackend.pull(),
+        checkVisibility: async () => "public",
+      };
+
+      const registryPath = join(home, "registry.json");
+      upsertRegistryEntry(registryPath, "good/project", goodProjectDir, () => "t");
+
+      const results = await pushAllRegistered({
+        backend: publicBackend,
+        detectors: [noopDetector],
+        homeDir: home,
+        registryPath,
+        lockPath: join(home, "repo.lock"),
+      });
+
+      const goodResult = results.get("good/project") as any;
+      expect(goodResult.failed).toBeUndefined();
+      expect(goodResult.skipped).toBeUndefined();
+      expect(goodResult.visibility).toBe("public");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(bareDir, { recursive: true, force: true });
+      rmSync(cloneDir, { recursive: true, force: true });
+      rmSync(goodProjectDir, { recursive: true, force: true });
     }
   });
 });

@@ -36,6 +36,9 @@ export async function runPush(deps: SyncEngineDeps, opts: RunPushOptions): Promi
         for (const warning of result.contentWarnings) {
           console.warn(`possible secret in ${warning} — not blocked, review before sharing the gist URL`);
         }
+        if (result.visibility === "public") {
+          console.warn("WARNING: the backing gist is public — your agent memory is world-readable.");
+        }
       }
     }
     if (anyFailure) {
@@ -48,5 +51,8 @@ export async function runPush(deps: SyncEngineDeps, opts: RunPushOptions): Promi
   console.log(`pushed ${projectKey}: ${result.pushedFiles.length} file(s)`);
   for (const warning of result.contentWarnings) {
     console.warn(`possible secret in ${warning} — not blocked, review before sharing the gist URL`);
+  }
+  if (result.visibility === "public") {
+    console.warn("WARNING: the backing gist is public — your agent memory is world-readable.");
   }
 }
