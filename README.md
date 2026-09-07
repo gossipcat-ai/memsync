@@ -50,7 +50,7 @@ npm install -g @gossipcat-ai/memsync
 - Node.js 20+
 - [GitHub CLI](https://cli.github.com/) (`gh`), authenticated: `gh auth login`
 
-**From source** (for contributors, or before the package above is live on the registry):
+**From source** (for contributors):
 
 ```bash
 gh repo clone gossipcat-ai/memsync
