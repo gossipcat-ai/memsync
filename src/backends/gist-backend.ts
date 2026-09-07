@@ -160,6 +160,79 @@ export class GistBackend implements GitRemoteBackend {
     };
   }
 
+  async rotate(): Promise<{ newGistId: string; oldGistId: string | undefined }> {
+    const oldGistId = this.gistId;
+    // Ensure we have the CURRENT content locally (against the OLD gist) before
+    // we touch anything — rotate has nothing to carry over otherwise.
+    await this.ensureLocalClone();
+
+    // ensureLocalClone() is a no-op whenever the clone directory already exists on
+    // disk — it never fetches/merges to catch an EXISTING clone up. rotate's realistic
+    // audience already ran init/push at least once, so the clone almost always already
+    // exists, and ensureLocalClone alone would silently do nothing here. Without an
+    // explicit pull, a clone that is behind the OLD gist's true HEAD (another machine
+    // pushed since this machine's last sync, or the gist was hand-edited on
+    // github.com) would have its stale local snapshot force-pushed into the new gist,
+    // discarding newer content with no warning. This mirrors pushProject's pre-sync
+    // pull in src/sync-engine/push.ts, which exists for the same reason.
+    const freshness = await this.pull();
+    if (!freshness.fastForward) {
+      throw new Error(
+        "rotate aborted: local clone is not up to date with the current gist — run `memsync pull` first, then retry `memsync rotate`",
+      );
+    }
+
+    // Same placeholder-file mechanism initRemote() already uses — `gh gist
+    // create` cannot create a truly empty gist.
+    const placeholderPath = join(tmpdir(), `memsync-gist-rotate-${randomUUID()}.md`);
+    writeFileSync(placeholderPath, "# memsync\n\nAgent memory store, managed by memsync.\n");
+    let newGistId: string;
+    try {
+      const { stdout } = await this.exec(
+        "gh",
+        ["gist", "create", "--desc", "memsync agent memory store", placeholderPath],
+        {},
+      );
+      newGistId = extractGistId(stdout);
+    } finally {
+      rmSync(placeholderPath, { force: true });
+    }
+
+    // Retarget the EXISTING clone (which already has the current, real content)
+    // at the new gist, then force-push — the new gist only contains the
+    // throwaway placeholder we just created, so a normal fast-forward push
+    // would be rejected (unrelated histories); force is safe here because we
+    // deliberately want to overwrite that placeholder with the real content.
+    const newCloneUrl = `https://gist.github.com/${newGistId}.git`;
+    await this.exec("git", ["remote", "set-url", "origin", newCloneUrl], { cwd: this.localClonePath });
+    try {
+      await this.exec("git", ["push", "--force", "origin", "HEAD:main"], { cwd: this.localClonePath });
+    } catch (err) {
+      // set-url already succeeded, so `origin` on disk now points at the new
+      // (still placeholder-only) gist even though this.gistId/config.json were
+      // never updated — a state divergence where a later `memsync push` would
+      // silently write real content into the new gist while doctor/status still
+      // report the old one. Revert `origin` back before rethrowing so on-disk
+      // state stays consistent with the in-memory/config state, which was never
+      // advanced past oldGistId.
+      if (oldGistId) {
+        try {
+          await this.exec(
+            "git",
+            ["remote", "set-url", "origin", `https://gist.github.com/${oldGistId}.git`],
+            { cwd: this.localClonePath },
+          );
+        } catch {
+          // best-effort revert; the original push failure is the error that matters
+        }
+      }
+      throw err;
+    }
+
+    this.gistId = newGistId;
+    return { newGistId, oldGistId };
+  }
+
   async checkVisibility(): Promise<"private" | "public" | "unknown"> {
     if (!this.gistId) return "unknown";
     try {

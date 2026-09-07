@@ -9,6 +9,7 @@ import { runPush } from "./push.js";
 import { runPull } from "./pull.js";
 import { runStatus } from "./status.js";
 import { runDoctor } from "./doctor.js";
+import { runRotate } from "./rotate.js";
 import { startWatch, generateInstallInstructions } from "./watch.js";
 import type { SyncEngineDeps } from "../sync-engine/push.js";
 
@@ -106,6 +107,24 @@ export function buildProgram(): Command {
     if (report.visibility === "public") {
       console.error("WARNING: the backing gist is public — your agent memory is world-readable.");
     }
+  });
+
+  program.command("rotate").action(async () => {
+    const deps = buildSyncEngineDeps();
+    const home = join(homedir(), ".memsync");
+    const result = await runRotate({ homeDir: home, backend: deps.backend as GistBackend });
+    console.log(`Rotated to a new gist: https://gist.github.com/${result.newGistId}`);
+    console.log(
+      `The old gist${result.oldGistId ? ` (https://gist.github.com/${result.oldGistId})` : ""} still exists ` +
+        `with your previous data and was NOT deleted automatically.`,
+    );
+    console.log(
+      "On every OTHER machine you use, run `memsync init --gist " + result.newGistId + "` to switch it over too.",
+    );
+    console.log(
+      "Once every machine has switched, delete the old gist yourself" +
+        (result.oldGistId ? ` (\`gh gist delete ${result.oldGistId}\`)` : "") + " if you no longer need it.",
+    );
   });
 
   program

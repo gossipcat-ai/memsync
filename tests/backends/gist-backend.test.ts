@@ -223,6 +223,106 @@ describe("GistBackend", () => {
     expect(gitCommands).not.toContain("reset --hard origin/main");
   });
 
+  it("rotate() creates a new gist, retargets the existing clone at it, force-pushes, and returns old+new ids", async () => {
+    let createCallArgs: string[] = [];
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "gh" && args[0] === "gist" && args[1] === "create") {
+        createCallArgs = args;
+        return { stdout: "https://gist.github.com/user/abc456\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone-rotate", exec);
+    await backend.initRemote("oldid123");
+
+    const result = await backend.rotate();
+
+    expect(result.oldGistId).toBe("oldid123");
+    expect(result.newGistId).toBe("abc456");
+    expect(backend.gistId).toBe("abc456");
+    expect(createCallArgs).toEqual(expect.arrayContaining(["gist", "create"]));
+
+    expect(exec).toHaveBeenCalledWith(
+      "git",
+      ["remote", "set-url", "origin", "https://gist.github.com/abc456.git"],
+      { cwd: "/tmp/unused-clone-rotate" },
+    );
+    expect(exec).toHaveBeenCalledWith(
+      "git",
+      ["push", "--force", "origin", "HEAD:main"],
+      { cwd: "/tmp/unused-clone-rotate" },
+    );
+  });
+
+  it("rotate() cleans up its throwaway placeholder file after creating the new gist", async () => {
+    let capturedArgs: string[] = [];
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "gh" && args[0] === "gist" && args[1] === "create") {
+        capturedArgs = args;
+        return { stdout: "https://gist.github.com/user/abc456\n", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone-rotate-2", exec);
+    await backend.initRemote("oldid123");
+    await backend.rotate();
+
+    const filePathArg = capturedArgs.find(
+      (arg) => !arg.startsWith("-") && arg !== "gist" && arg !== "create" && arg !== "memsync agent memory store",
+    );
+    expect(typeof filePathArg).toBe("string");
+    expect(existsSync(filePathArg as string)).toBe(false);
+  });
+
+  it("rotate() aborts and never creates a new gist when the local clone cannot be fast-forwarded to the current gist (stale local clone)", async () => {
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "git" && args[0] === "merge") {
+        throw new Error("fatal: Not possible to fast-forward, aborting.");
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone-rotate-stale", exec);
+    await backend.initRemote("oldid123");
+
+    await expect(backend.rotate()).rejects.toThrow(/not up to date/);
+    expect(backend.gistId).toBe("oldid123");
+
+    const createCalls = exec.mock.calls.filter(
+      ([cmd, args]) => cmd === "gh" && args[0] === "gist" && args[1] === "create",
+    );
+    expect(createCalls.length).toBe(0);
+  });
+
+  it("rotate() reverts origin back to the OLD gist's clone URL when force-push fails after set-url already succeeded, and rethrows the original error", async () => {
+    const exec = vi.fn(async (cmd: string, args: string[]) => {
+      if (cmd === "gh" && args[0] === "gist" && args[1] === "create") {
+        return { stdout: "https://gist.github.com/user/abc456\n", stderr: "" };
+      }
+      if (cmd === "git" && args[0] === "push" && args[1] === "--force") {
+        throw new Error(
+          "fatal: unable to access 'https://gist.github.com/abc456.git/': Could not resolve host: gist.github.com",
+        );
+      }
+      return { stdout: "", stderr: "" };
+    });
+    const backend = new GistBackend("/tmp/unused-clone-rotate-revert", exec);
+    await backend.initRemote("oldid123");
+
+    await expect(backend.rotate()).rejects.toThrow(/Could not resolve host/);
+
+    // gistId was never advanced past the old id, matching config.json (which the
+    // CLI layer only writes after rotate() resolves successfully).
+    expect(backend.gistId).toBe("oldid123");
+
+    const setUrlCalls = exec.mock.calls.filter(
+      ([cmd, args]) => cmd === "git" && args[0] === "remote" && args[1] === "set-url",
+    );
+    expect(setUrlCalls.length).toBe(2);
+    expect(setUrlCalls[0][1]).toEqual(["remote", "set-url", "origin", "https://gist.github.com/abc456.git"]);
+    expect(setUrlCalls[1][1]).toEqual(["remote", "set-url", "origin", "https://gist.github.com/oldid123.git"]);
+    expect(setUrlCalls[1][2]).toEqual({ cwd: "/tmp/unused-clone-rotate-revert" });
+  });
+
   it("initRemote writes a throwaway placeholder file (gh gist create cannot create an empty gist) and cleans it up afterward", async () => {
     let capturedArgs: string[] = [];
     const exec = vi.fn(async (cmd: string, args: string[]) => {

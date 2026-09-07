@@ -96,6 +96,7 @@ keeps every machine current — or skip the discipline entirely with `memsync wa
 | `memsync pull [--all] [--dry-run] [--project-key <key>]` | Restores memory files for the current project. `--dry-run` shows what would change without touching anything. This is also how you do a first-time restore onto a brand-new machine. |
 | `memsync status` | Lists every project this machine has synced and when it last synced. |
 | `memsync doctor` | Diagnoses the current project: which tools were detected, which expected files are missing, and whether the backing Gist is still private. |
+| `memsync rotate` | Creates a fresh private Gist, migrates the current synced content into it, and switches this machine over — the old gist is left in place, not deleted; run `memsync init --gist <new-id>` on every other machine, then delete the old gist yourself once you've confirmed the switch. |
 | `memsync watch [--install]` | Watches every registered project and auto-pushes on change, debounced. `--install` wires this into your OS's login/boot process (launchd on macOS, cron on Linux) — not supported on Windows in v1. |
 
 ### How a project is identified
@@ -183,7 +184,10 @@ These are deliberate v1 trade-offs, not bugs:
 - **The Gist is unlisted, not access-controlled.** Anyone with the URL can read it. Encryption is
   planned for a future release; for now, treat the Gist URL itself as sensitive.
 - **Gist history is permanent.** Adding a secret to `.memsyncignore` or deleting it locally stops
-  it from being synced going forward, but does not erase it from commits already made.
+  it from being synced going forward, but does not erase it from commits already made. `memsync
+  rotate` provides a remediation path — it creates a brand-new Gist (with no history) seeded from
+  only the current content, and switches this machine to it; the old Gist (and its history) still
+  exists until you delete it yourself once every machine has switched over.
 - **memsync doesn't detect memory poisoning or prompt injection.** It faithfully transports
   whatever an agent wrote — content trust is out of scope for this tool.
 - **`.bak` files aren't cleaned up automatically** — they accumulate over time.
